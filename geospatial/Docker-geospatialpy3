@@ -1,0 +1,66 @@
+
+FROM jupyter/scipy-notebook:ad3574d3c5c7
+
+USER root 
+
+
+RUN apt update \
+    && apt-get install -y software-properties-common \ 
+    && add-apt-repository -y ppa:ubuntugis/ubuntugis-unstable\
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+RUN apt-get update && apt-get install --fix-missing -y --no-install-recommends \ 
+  build-essential \ 
+  git \ 
+  subversion \
+  wget \
+  bash-completion \
+  netcat \
+  iputils-ping \
+  nano \
+  zip \
+  openssh-client \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/
+
+    
+USER jovyan
+
+RUN conda install -y -c default\
+    pandas \
+    gdal \
+    basemap \
+    geopandas \
+    markdown2 \
+    #osmnx=0.5.4 \
+    osmnx \
+    rasterio \
+    scikit-image \
+ && conda clean --all -y
+
+# conda env
+RUN conda install -y -c default holoviews geoviews datashader panel fiona shapely rasterio paramiko ipywidgets pyproj ipython numpy xarray matplotlib geopandas seaborn netCDF4 requests && \
+    conda install -y -c conda-forge ipyleaflet jupyterthemes hs_restclient && \
+    conda install -y -c conda-forge tqdm statsmodels && \
+    conda install -y -c default owslib sqlalchemy cartopy pysal geojson cenpy pykdtree && \
+    
+    conda clean --all -y
+
+# Urban simulation
+RUN conda install -c udst pandana urbanaccess && \
+    conda clean --all -y
+
+RUN pip install --quiet urbansim
+
+
+USER jovyan
+
+
+RUN conda init
+RUN conda config --set auto_activate_base false
+
+ENV GDAL_DATA=/opt/conda/share/gdal
+ENV PROJ_LIB=/opt/conda/share/proj
+
+
+
