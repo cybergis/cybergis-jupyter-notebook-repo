@@ -1,0 +1,186 @@
+
+FROM jupyter/scipy-notebook:ad3574d3c5c7
+
+USER root 
+
+
+#RUN apt update \
+#    && apt-get install -y software-properties-common \ 
+#    && add-apt-repository -y ppa:ubuntugis/ubuntugis-unstable\
+#    && add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+RUN apt-get update && apt-get install --fix-missing -y --no-install-recommends \
+  software-properties-common \ 
+  build-essential \ 
+  git \ 
+  subversion \
+  wget \
+  bash-completion \
+  netcat \
+  iputils-ping \
+  nano \
+  zip \
+  #openssh-client \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/
+
+    
+USER jovyan
+
+RUN conda install -y -c default\
+    pandas \
+    gdal=2.4.1 \
+    basemap \
+    geopandas \
+    markdown2 \
+    #osmnx=0.5.4 \
+    osmnx \
+    rasterio \
+    scikit-image \
+ && conda clean --all -y
+
+# conda env
+RUN conda install -y -c default holoviews geoviews datashader panel fiona shapely rasterio paramiko ipywidgets pyproj ipython numpy xarray matplotlib geopandas seaborn netCDF4 requests && \
+    conda install -y -c conda-forge ipyleaflet jupyterthemes hs_restclient && \
+    conda install -y -c conda-forge tqdm statsmodels && \
+    conda install -y -c default owslib sqlalchemy cartopy pysal geojson cenpy pykdtree && \
+    
+    conda clean --all -y
+
+# Urban simulation
+RUN conda install -c udst pandana urbanaccess && \
+    conda clean --all -y
+
+RUN pip install --quiet urbansim
+
+
+USER jovyan
+
+
+RUN conda init
+RUN conda config --set auto_activate_base false
+
+ENV GDAL_DATA=/opt/conda/share/gdal
+ENV PROJ_LIB=/opt/conda/share/proj
+
+USER root
+
+### TauDEM installation adapted from 
+### https://github.com/hydroshare/hydroshare-jupyterhub/blob/develop/docker/docker-base/Dockerfile
+
+
+RUN apt-get update && apt-get install --fix-missing -y --no-install-recommends \
+  software-properties-common \
+  gfortran \
+  autoconf \
+  automake \
+  libtool \
+  build-essential \
+  wget \
+  bash-completion \
+  netcat \
+  iputils-ping \
+  nano \
+  screen \
+  openssh-client \
+  libgdal-dev \
+  cmake \
+  zip \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/
+
+RUN git clone https://github.com/cybergis/find_inlets.git /tmp/find_inlets \
+    && cd /tmp/find_inlets/src \
+    && g++ find_inlets.cpp -I/usr/include/gdal -L/usr/lib -lgdal -o find_inlets_mr \
+    && cp ./find_inlets_mr /usr/bin \
+    && rm -rf /tmp/find_inlets
+
+
+RUN git clone -b v3.3.1 https://github.com/pmodels/mpich.git /tmp/mpich \
+    && cd /tmp/mpich \
+    && git submodule update --init \
+    && ./autogen.sh \
+    && ./configure --prefix=/usr \
+    && make -j8 \
+    && make -j8 install \
+    && rm -rf /tmp/mpich
+
+RUN git clone --branch Develop https://github.com/dtarb/TauDEM.git /home/jovyan/libs/TauDEM \
+    && cd /home/jovyan/libs/TauDEM \
+    && git checkout bceeef2f6a399aa23749a7c7cae7fed521ea910f \
+    && cd /home/jovyan/libs/TauDEM/src \
+    && sed -i 's#\.\.#/usr/local/bin#g' makefile \
+    && make \
+    && rm -rf /home/jovyan/libs/TauDEM
+
+
+### Complie SUMMA
+# install only the packages that are needed
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    software-properties-common \
+    ca-certificates \
+    git \
+    make \
+    libnetcdff-dev \
+    liblapack-dev \
+    vim
+
+# install gfortran-6
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gfortran-6 \
+    && apt-get clean
+
+# download summa source code
+ENV F_MASTER /tmp/summa
+ENV FC gfortran
+ENV FC_EXE gfortran
+ENV FC_ENV gfortran-6-docker
+RUN git clone -b sopron_2018 https://github.com/NCAR/summa.git /tmp/summa \
+    && cd /tmp/summa \
+    && git checkout f18270c2ce5f2b5004c2b3e1799bd0969612bb68 \
+    && make -C build/ -f Makefile \
+    && cp /tmp/summa/bin/summa.exe /usr/bin \
+    && chmod +x /usr/bin/summa.exe \
+    && cd /usr/bin \
+    && ./summa.exe --version \
+    && rm -rf /tmp/summa
+
+### END SUMMA
+
+USER jovyan
+
+
+# Install hydro-py3 env (Drew)
+RUN /opt/conda/bin/conda create -y -n hydro-py3 -c default python=3.7 holoviews geoviews datashader panel fiona shapely rasterio \
+    paramiko ipywidgets pyproj ipython numpy xarray matplotlib geopandas seaborn netCDF4 requests distributed bokeh &&\
+    /opt/conda/bin/conda install -y -n hydro-py3 -c conda-forge ipyleaflet jupyterthemes hs_restclient dask-jobqueue && \
+    /opt/conda/bin/conda clean --all -y
+
+# kernel
+RUN /opt/conda/envs/hydro-py3/bin/python -m ipykernel install \
+    --user \
+    --name "hydro-py3" \
+    --display-name "Hydro-Python3"
+# End Hydro Py3 Kernel
+
+RUN /opt/conda/envs/hydro-py3/bin/python -m pip install --quiet git+https://github.com/cybergis/Jupyter-xsede.git@hydroshare
+RUN /opt/conda/envs/hydro-py3/bin/python -m pip install --quiet git+https://github.com/uva-hydroinformatics/pysumma.git@develop
+# fix some versions that got broken by pysumma installation
+RUN /opt/conda/bin/conda install -y -n hydro-py3 -c default bokeh distributed gdal=2.4.2
+
+#Install nbgitpuller
+RUN pip install nbgitpuller
+RUN jupyter serverextension enable nbgitpuller --sys-prefix
+
+RUN pip install --quiet pykrige
+
+ENV GDAL_DATA=/opt/conda/share/gdal
+ENV PROJ_LIB=/opt/conda/share/proj
+
+RUN cp /opt/conda/envs/hydro-py3/share/proj/proj.db /opt/conda/share/proj/
+
+RUN conda install -y -c conda-forge mapclassify mplleaflet
+
+USER jovyan
