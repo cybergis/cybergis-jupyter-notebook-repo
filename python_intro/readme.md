@@ -1,1 +1,1 @@
-#### Summerschool notebooks
+#### Python intro notebooks
