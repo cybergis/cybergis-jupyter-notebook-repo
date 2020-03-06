@@ -1,5 +1,0 @@
-line 1
-second line
-
-4th line
-this is a test file
